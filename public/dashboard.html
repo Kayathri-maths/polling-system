@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <h1>Dashboard</h1>
+    <div id="nav">
+      <button id="createPollBtn">Create Poll</button>
+      <button id="viewProfileBtn">View Profile</button>
+      <button id="viewPollsBtn">View Polls</button>
+    </div>
+    <div id="content"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+    <script>
+      const socket = io("http://localhost:3000");
+
+      function handleUnauthorized() {
+        alert("Session expired or invalid token. Please log in again.");
+        localStorage.removeItem("token");
+        window.location.href = "login.html";
+      }
+
+      function showError(message) {
+        alert(message);
+        console.error(message);
+      }
+
+      function setContent(html) {
+        document.getElementById("content").innerHTML = html;
+      }
+
+      function handlePollCreation() {
+        setContent(`
+          <h2>Create Poll</h2>
+          <form id="pollForm">
+            <input type="text" id="question" placeholder="Poll Question" required />
+            <input type="text" id="option1" placeholder="Option 1" required />
+            <input type="text" id="option2" placeholder="Option 2" required />
+            <button type="submit">Create Poll</button>
+          </form>
+        `);
+
+        document
+          .getElementById("pollForm")
+          .addEventListener("submit", function (event) {
+            event.preventDefault();
+            const options = [
+              { text: document.getElementById("option1").value },
+              { text: document.getElementById("option2").value },
+            ];
+
+            const pollData = {
+              question: document.getElementById("question").value,
+              options: options,
+            };
+
+            const token = localStorage.getItem("token");
+
+            axios
+              .post("http://localhost:3000/api/polls", pollData, {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              })
+              .then(() => {
+                alert("Poll created successfully!");
+                handlePollsView();
+              })
+              .catch((error) => {
+                if (error.response && error.response.status === 401) {
+                  handleUnauthorized();
+                } else {
+                  showError("Error creating poll");
+                }
+              });
+          });
+      }
+
+      function handleProfileView() {
+        axios
+          .get("http://localhost:3000/api/users/profile", {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+          })
+          .then((response) => {
+            const userProfile = response.data;
+            setContent(`
+              <h2>User Profile</h2>
+              <p>Username: ${userProfile.username}</p>
+              <p>Email: ${userProfile.email}</p>
+              <h3>Created Polls</h3>
+              <ul>
+                ${userProfile.createdPolls
+                  .map((poll) => `<li>${poll.question}</li>`)
+                  .join("")}
+              </ul>
+              <h3>Voted Polls</h3>
+              <ul>
+                ${userProfile.votedPolls
+                  .map((poll) => `<li>${poll.question}</li>`)
+                  .join("")}
+              </ul>
+            `);
+          })
+          .catch((error) => {
+            if (error.response && error.response.status === 401) {
+              handleUnauthorized();
+            } else {
+              showError("Error fetching profile");
+            }
+          });
+      }
+
+      function handlePollsView() {
+        const token = localStorage.getItem("token");
+        if (!token) {
+          alert("You need to log in to view polls.");
+          return;
+        }
+
+        axios
+          .get("http://localhost:3000/api/polls", {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          })
+          .then((response) => {
+            const { userPolls, othersPolls } = response.data;
+            setContent(`
+        <div id="all-polls">
+          <div id="yourPolls">
+            <h3>Your Polls</h3>
+            ${
+              userPolls.length > 0
+                ? userPolls
+                    .map(
+                      (poll) => `
+            <div id="poll-${poll._id}" class="poll-container">
+              <h3>${poll.question}</h3>
+              <form class="voteForm">
+                ${poll.options
+                  .map(
+                    (option) => `
+                  <label>
+                    <input type="radio" name="poll${poll._id}" value="${
+                      option._id
+                    }" ${
+                      poll.votedBy.includes(localStorage.getItem("userId"))
+                        ? "disabled"
+                        : ""
+                    } required />
+                    ${option.text}
+                    ${
+                      poll.votedBy.includes(localStorage.getItem("userId"))
+                        ? ""
+                        : `<span class="vote-count">Votes: ${option.votes}</span>`
+                    }
+                  </label>
+                  <br />
+                `
+                  )
+                  .join("")}
+                ${
+                  poll.votedBy.includes(localStorage.getItem("userId"))
+                    ? `<p class="voted-answer">You voted for: ${
+                        poll.options.find((option) =>
+                          poll.votedBy.includes(localStorage.getItem("userId"))
+                        ).text
+                      }</p>`
+                    : '<button type="submit">Vote</button>'
+                }
+              </form>
+            </div>
+          `
+                    )
+                    .join("")
+                : "<p>You have not created any polls yet.</p>"
+            }
+          </div>
+          <div id="othersPolls">
+            <h3>Others Polls</h3>
+            ${
+              othersPolls.length > 0
+                ? othersPolls
+                    .map(
+                      (poll) => `
+            <div id="poll-${poll._id}" class="poll-container">
+              <h3>${poll.question}</h3>
+              <form class="voteForm">
+                ${poll.options
+                  .map(
+                    (option) => `
+                  <label>
+                    <input type="radio" name="poll${poll._id}" value="${
+                      option._id
+                    }" ${
+                      poll.votedBy.includes(localStorage.getItem("userId"))
+                        ? "disabled"
+                        : ""
+                    } required />
+                    ${option.text}
+                  </label>
+                  <br />
+                `
+                  )
+                  .join("")}
+                ${
+                  poll.votedBy.includes(localStorage.getItem("userId"))
+                    ? `<p class="voted-answer">You voted for: ${
+                        poll.options.find((option) =>
+                          poll.votedBy.includes(localStorage.getItem("userId"))
+                        ).text
+                      }</p>`
+                    : '<button type="submit">Vote</button>'
+                }
+              </form>
+            </div>
+          `
+                    )
+                    .join("")
+                : "<p>No polls available.</p>"
+            }
+          </div>
+        </div>
+      `);
+
+            document.querySelectorAll(".voteForm").forEach((form) => {
+              form.addEventListener("submit", function (event) {
+                event.preventDefault();
+                const pollId = this.closest("div").id.replace("poll-", "");
+                const selectedOptionId = this.querySelector(
+                  `input[name="poll${pollId}"]:checked`
+                ).value;
+
+                axios
+                  .post(
+                    `http://localhost:3000/api/polls/${pollId}/vote`,
+                    { optionId: selectedOptionId },
+                    {
+                      headers: {
+                        Authorization: `Bearer ${token}`,
+                      },
+                    }
+                  )
+                  .then(() => {
+                    alert("Vote submitted successfully!");
+                    socket.emit("vote", { pollId, optionId: selectedOptionId });
+                    handlePollsView();
+                  })
+                  .catch((error) => {
+                    console.log(error, "errror>>>>>>>>>>>>>>>>");
+                    if (error.response.status === 400) {
+                      const { votedOption } = error.response.data;
+                      alert(`You have already voted for: ${votedOption}`);
+                      handlePollsView(); // Refresh polls to reflect voting status
+                    } else {
+                      alert("Error submitting vote");
+                    }
+                  });
+              });
+            });
+          })
+          .catch((error) => {
+            if (error.response && error.response.status === 401) {
+              handleUnauthorized();
+            } else {
+              showError("Error fetching polls");
+            }
+          });
+
+        socket.on("voteUpdate", (data) => {
+          const pollElement = document.getElementById(`poll-${data.pollId}`);
+          if (pollElement) {
+            data.options.forEach((option) => {
+              const optionElement = pollElement.querySelector(
+                `input[value="${option._id}"]`
+              );
+              if (optionElement) {
+                const voteCountSpan =
+                  optionElement.nextElementSibling.querySelector(".vote-count");
+                if (voteCountSpan) {
+                  voteCountSpan.textContent = `Votes: ${option.votes}`;
+                }
+
+                optionElement.disabled = true;
+              }
+            });
+          }
+        });
+      }
+
+      document
+        .getElementById("createPollBtn")
+        .addEventListener("click", handlePollCreation);
+      document
+        .getElementById("viewProfileBtn")
+        .addEventListener("click", handleProfileView);
+      document
+        .getElementById("viewPollsBtn")
+        .addEventListener("click", handlePollsView);
+    </script>
+  </body>
+</html>
